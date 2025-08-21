@@ -1,0 +1,154 @@
+<!doctype html>
+<html>
+<head>
+    <meta charset="utf-8" />
+    <title>ChatApp</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <style>
+        body { font-family: ui-sans-serif, system-ui, Arial; margin: 20px; }
+        #chat { border: 1px solid #ddd; padding: 12px; height: 300px; overflow-y: auto; }
+        #users { border: 1px solid #ddd; padding: 12px; height: 120px; overflow-y: auto; }
+        .row { display: flex; gap: 8px; margin-bottom: 8px; }
+        input, button { padding: 8px; }
+        .msg { margin: 4px 0; }
+        .meta { color: #555; font-size: 12px; }
+    </style>
+</head>
+<body>
+<h1>ChatApp</h1>
+
+<div class="row">
+    <input id="username" placeholder="Your name" />
+    <input id="room" placeholder="Room (e.g., general)" />
+    <button onclick="connect()">Join</button>
+    <button onclick="leave()">Leave</button>
+</div>
+
+<div class="row">
+    <input id="message" placeholder="Type a message" style="flex:1" />
+    <button onclick="sendMessage()">Send</button>
+</div>
+
+<h3>Room messages</h3>
+<div id="chat"></div>
+
+<h3>Who’s online</h3>
+<div id="users"></div>
+
+<!-- SockJS + STOMP -->
+<script src="https://cdn.jsdelivr.net/npm/sockjs-client@1/dist/sockjs.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/stompjs@2.3.3/lib/stomp.min.js"></script>
+
+<script>
+    let stompClient = null;
+    let currentRoom = null;
+    let currentUser = null;
+
+    function connect() {
+        currentUser = document.getElementById('username').value?.trim();
+        currentRoom = document.getElementById('room').value?.trim();
+        if (!currentUser || !currentRoom) {
+            alert('Enter username and room');
+            return;
+        }
+
+        const socket = new SockJS('/ws');
+        stompClient = Stomp.over(socket);
+        stompClient.connect({}, frame => {
+            logMeta('Connected: ' + frame);
+
+            // Subscribe to room messages
+            stompClient.subscribe('/topic/rooms/' + currentRoom, payload => {
+                const msg = JSON.parse(payload.body);
+                renderMessage(msg);
+            });
+
+            // Subscribe to presence updates
+            stompClient.subscribe('/topic/rooms/' + currentRoom + '/users', payload => {
+                const presence = JSON.parse(payload.body);
+                renderUsers(presence.users);
+            });
+
+            // Notify join
+            stompClient.send('/app/rooms/' + currentRoom + '/join', {}, JSON.stringify({
+                type: 'JOIN',
+                sender: currentUser
+            }));
+        }, err => {
+            logMeta('Connection error: ' + err);
+        });
+    }
+
+    function sendMessage() {
+        if (!stompClient || !stompClient.connected) {
+            alert('Not connected');
+            return;
+        }
+        const text = document.getElementById('message').value;
+        if (!text.trim()) return;
+
+        stompClient.send('/app/rooms/' + currentRoom + '/send', {}, JSON.stringify({
+            type: 'CHAT',
+            sender: currentUser,
+            content: text
+        }));
+        document.getElementById('message').value = '';
+    }
+
+    function leave() {
+        if (stompClient && stompClient.connected && currentRoom && currentUser) {
+            stompClient.send('/app/rooms/' + currentRoom + '/leave', {}, JSON.stringify({
+                type: 'LEAVE',
+                sender: currentUser
+            }));
+            stompClient.disconnect(() => logMeta('Disconnected'));
+        }
+        currentRoom = null;
+        currentUser = null;
+        document.getElementById('chat').innerHTML = '';
+        document.getElementById('users').innerHTML = '';
+    }
+
+    window.addEventListener('beforeunload', () => {
+        if (stompClient && stompClient.connected && currentRoom && currentUser) {
+            stompClient.send('/app/rooms/' + currentRoom + '/leave', {}, JSON.stringify({
+                type: 'LEAVE',
+                sender: currentUser
+            }));
+            stompClient.disconnect();
+        }
+    });
+
+    function renderMessage(msg) {
+        const div = document.createElement('div');
+        div.className = 'msg';
+        if (msg.type === 'CHAT') {
+            div.textContent = `[${msg.sender}] ${msg.content}`;
+        } else if (msg.type === 'JOIN') {
+            div.innerHTML = `<span class="meta">${msg.sender} joined</span>`;
+        } else if (msg.type === 'LEAVE') {
+            div.innerHTML = `<span class="meta">${msg.sender} left</span>`;
+        }
+        document.getElementById('chat').appendChild(div);
+        document.getElementById('chat').scrollTop = document.getElementById('chat').scrollHeight;
+    }
+
+    function renderUsers(users) {
+        const container = document.getElementById('users');
+        container.innerHTML = '';
+        (users || []).forEach(u => {
+            const div = document.createElement('div');
+            div.textContent = u;
+            container.appendChild(div);
+        });
+    }
+
+    function logMeta(text) {
+        const div = document.createElement('div');
+        div.className = 'meta';
+        div.textContent = text;
+        document.getElementById('chat').appendChild(div);
+    }
+</script>
+</body>
+</html>
