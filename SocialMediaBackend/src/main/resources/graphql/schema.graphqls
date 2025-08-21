@@ -1,0 +1,47 @@
+type User {
+    id: ID!
+    username: String!
+    name: String
+    createdAt: String!
+}
+
+type Comment {
+    id: ID!
+    content: String!
+    author: User!
+    createdAt: String!
+}
+
+type Post {
+    id: ID!
+    content: String!
+    author: User!
+    likeCount: Int!
+    createdAt: String!
+    comments: [Comment!]!
+}
+
+type PostPage {
+    items: [Post!]!
+    page: Int!
+    size: Int!
+    totalPages: Int!
+    totalElements: Int!
+    hasNext: Boolean!
+}
+
+
+type Query {
+    user(id: ID!): User
+    postsByUser(userId: ID!, page: Int = 0, size: Int = 10): PostPage!
+    timeline(page: Int = 0, size: Int = 10): PostPage!
+    trending(hours: Int = 24, limit: Int = 10): [Post!]!
+}
+
+type Mutation {
+    createUser(username: String!, name: String): User!
+    createPost(userId: ID!, content: String!): Post!
+    createComment(userId: ID!, postId: ID!, content: String!): Comment!
+    likePost(postId: ID!): Post!
+}
+
